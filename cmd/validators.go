@@ -1,4 +1,4 @@
-package cmd
+package main
 
 import (
 	"pizza-tracker-go/internal/models"
