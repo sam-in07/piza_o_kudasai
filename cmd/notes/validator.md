@@ -1,20 +1,40 @@
-This file registers **custom validation rules** for your Gin application. These rules ensure that users can only submit **valid pizza types** and **valid pizza sizes**.
+This file adds **custom validation rules** to Gin's form validation system.
 
-Let's go through it step by step.
+In your pizza tracker, this is what makes sure that a customer can't submit something like:
 
----
-
-# 1. Package
-
-```go
-package cmd
+```text
+pizza = "Hamburger"
+size  = "Huge"
 ```
 
-This file belongs to the `cmd` package.
+when your application only allows specific pizza types and sizes.
+
+The overall flow is:
+
+```text
+Customer submits form
+        ↓
+ShouldBind(&form)
+        ↓
+Gin validator
+        ↓
+required?
+min/max?
+valid_pizza_type?
+valid_pizza_size?
+        ↓
+All valid?
+   ┌────┴────┐
+  YES       NO
+   │         │
+   ▼         ▼
+Create     Error
+order
+```
 
 ---
 
-# 2. Imports
+# 1. Imports
 
 ```go
 import (
@@ -22,37 +42,44 @@ import (
     "slices"
 
     "github.com/gin-gonic/gin/binding"
-    "github.com/go-playground/validator"
+    "github.com/go-playground/validator/v10"
 )
 ```
 
+You have four important dependencies.
+
 ### `models`
 
-Imports:
+```go
+"pizza-tracker-go/internal/models"
+```
+
+This contains your allowed pizza values.
+
+From your previous code, you have:
 
 ```go
 models.PizzaTypes
 models.PizzaSizes
 ```
 
-which are defined as:
+For example, conceptually:
 
 ```go
-var PizzaTypes = []string{
+models.PizzaTypes = []string{
     "Margherita",
     "Pepperoni",
-    ...
+    "Hawaiian",
 }
 ```
 
-and
+and:
 
 ```go
-var PizzaSizes = []string{
+models.PizzaSizes = []string{
     "Small",
     "Medium",
     "Large",
-    "X-Large",
 }
 ```
 
@@ -60,9 +87,11 @@ var PizzaSizes = []string{
 
 ### `slices`
 
-This is a Go standard library package (Go 1.21+).
+```go
+"slices"
+```
 
-It provides useful slice operations.
+This is Go's standard `slices` package.
 
 You're using:
 
@@ -70,27 +99,33 @@ You're using:
 slices.Contains(...)
 ```
 
-Example:
+to check whether a value exists inside a slice.
+
+For example:
 
 ```go
-sizes := []string{"Small", "Medium", "Large"}
-
-slices.Contains(sizes, "Medium")
+slices.Contains(
+    []string{"Small", "Medium", "Large"},
+    "Medium",
+)
 ```
 
-returns
+returns:
 
 ```text
 true
 ```
 
-while
+while:
 
 ```go
-slices.Contains(sizes, "Huge")
+slices.Contains(
+    []string{"Small", "Medium", "Large"},
+    "Huge",
+)
 ```
 
-returns
+returns:
 
 ```text
 false
@@ -98,45 +133,49 @@ false
 
 ---
 
-### `binding`
+### Gin binding
 
 ```go
 "github.com/gin-gonic/gin/binding"
 ```
 
-Gin uses this package to bind incoming JSON or form data to Go structs and validate them.
+Gin uses this package to handle request/form binding and validation.
 
-Example:
+This is what connects your struct tags like:
 
 ```go
-c.ShouldBindJSON(&order)
+binding:"required,min=2,max=100"
 ```
 
-During binding, Gin automatically runs the registered validators.
+to the validator library.
 
 ---
 
-### `validator`
+### Validator
 
 ```go
-"github.com/go-playground/validator"
+"github.com/go-playground/validator/v10"
 ```
 
-This is the validation library used internally by Gin.
+This is the actual validation library used by Gin.
 
-It supports tags like:
+Your previous `OrderReuqest` had:
 
 ```go
-binding:"required"
-binding:"email"
-binding:"min=3"
+Name string `form:"name" binding:"required,min=2,max=100"`
 ```
 
-and also lets you create custom validators.
+and:
+
+```go
+Sizes []string `form:"size" binding:"required,min=1,dive,valid_pizza_size"`
+```
+
+The validator understands those tags.
 
 ---
 
-# 3. RegisterCustomValidators()
+# 2. `RegisterCustomValidators()`
 
 ```go
 func RegisterCustomValidators() {
@@ -144,35 +183,95 @@ func RegisterCustomValidators() {
 
 This function registers your custom validation rules.
 
+You call it from `main.go`:
+
+```go
+RegisterCustomValidators()
+```
+
+The important thing is **when** you call it.
+
+Your startup sequence is approximately:
+
+```text
+main()
+  ↓
+loadConfig()
+  ↓
+InitDB()
+  ↓
+RegisterCustomValidators()
+  ↓
+NewHandler()
+  ↓
+setupRoutes()
+  ↓
+server starts
+```
+
+So by the time a customer submits an order, your custom validators have already been registered.
+
 ---
 
-## Get Gin's validator
+# 3. Getting Gin's validator
 
 ```go
 if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 ```
 
-### What is happening?
+This looks complicated, but it is basically doing two things.
 
-Gin already has a validator.
-
-This line retrieves it and converts (type asserts) it to:
+### First:
 
 ```go
-*validator.Validate
+binding.Validator.Engine()
 ```
 
-If successful:
+asks Gin:
 
-```go
-v
-```
+> Give me the underlying validation engine.
 
-can register new validation rules.
+Gin normally uses `go-playground/validator`.
 
 ---
 
-## Register pizza type validator
+### Second:
+
+```go
+.(*validator.Validate)
+```
+
+is a **type assertion**.
+
+You're saying:
+
+> I expect this validation engine to be a `*validator.Validate`.
+
+The result gives you two variables:
+
+```go
+v
+ok
+```
+
+For example:
+
+```text
+v  → validator engine
+ok → true/false
+```
+
+If the assertion succeeds:
+
+```text
+ok = true
+```
+
+then you register your validators.
+
+---
+
+# 4. Register `valid_pizza_type`
 
 ```go
 v.RegisterValidation(
@@ -181,41 +280,23 @@ v.RegisterValidation(
 )
 ```
 
-This creates a validation rule called:
+This creates a custom validation tag called:
 
 ```text
 valid_pizza_type
 ```
 
-Later you can use it in a struct:
+Now your struct can say:
 
 ```go
-Pizza string `binding:"required,valid_pizza_type"`
+PizzaTypes []string `binding:"...,valid_pizza_type"`
 ```
 
-If the client sends:
-
-```json
-{
-    "pizza": "Pepperoni"
-}
-```
-
-✅ Passes.
-
-If they send:
-
-```json
-{
-    "pizza": "Chocolate Pizza"
-}
-```
-
-❌ Validation fails because `"Chocolate Pizza"` is not in `models.PizzaTypes`.
+and the validator knows what `valid_pizza_type` means.
 
 ---
 
-## Register pizza size validator
+# 5. Register `valid_pizza_size`
 
 ```go
 v.RegisterValidation(
@@ -224,100 +305,155 @@ v.RegisterValidation(
 )
 ```
 
-Now you can write:
+Same idea.
 
-```go
-Size string `binding:"required,valid_pizza_size"`
-```
-
-Valid:
+You're creating:
 
 ```text
-Small
-Medium
-Large
-X-Large
+valid_pizza_size
 ```
 
-Invalid:
-
-```text
-Tiny
-Huge
-XXXL
-```
+which checks whether the submitted size is one of your allowed sizes.
 
 ---
 
-# 4. createSliceValidator()
+# 6. Why `createSliceValidator()`?
+
+This is a clever part of your code.
+
+Instead of writing:
 
 ```go
-func createSliceValidator(allowedValues []string) validator.Func
-```
+func validatePizzaType(...) bool {
+    ...
+}
 
-This is a helper function.
-
-Instead of writing two almost identical validators, you create one reusable function.
-
----
-
-## Parameter
-
-```go
-allowedValues []string
-```
-
-Example:
-
-```go
-[]string{
-    "Small",
-    "Medium",
-    "Large",
+func validatePizzaSize(...) bool {
+    ...
 }
 ```
 
----
-
-## Returns
+you create **one generic validator factory**:
 
 ```go
-validator.Func
+func createSliceValidator(
+    allowedValues []string,
+) validator.Func
 ```
 
-A validation function that Gin can call.
+It receives a list of allowed values.
+
+For pizza types:
+
+```go
+createSliceValidator(models.PizzaTypes)
+```
+
+For sizes:
+
+```go
+createSliceValidator(models.PizzaSizes)
+```
+
+So:
+
+```text
+                  createSliceValidator()
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+      models.PizzaTypes      models.PizzaSizes
+              │                     │
+              ▼                     ▼
+       pizza type validator    size validator
+```
+
+This avoids duplicated code.
 
 ---
 
-## The returned function
+# 7. The return value
 
 ```go
 return func(fl validator.FieldLevel) bool {
 ```
 
-Whenever Gin validates a field, it passes information about that field through `fl`.
+This function returns another function.
 
-Suppose:
+That is a **function closure**.
+
+The returned function has to match the type expected by:
 
 ```go
-Size = "Medium"
+validator.Func
 ```
 
-then
+Its job is simply:
+
+```text
+value valid → true
+value invalid → false
+```
+
+---
+
+# 8. `FieldLevel`
+
+```go
+fl validator.FieldLevel
+```
+
+`fl` gives the validator information about the field currently being validated.
+
+For example, suppose:
+
+```go
+PizzaTypes = []string{"Pepperoni"}
+```
+
+The validator is checking:
+
+```text
+"Pepperoni"
+```
+
+`fl` lets you access that value.
+
+---
+
+# 9. `fl.Field()`
+
+```go
+fl.Field()
+```
+
+gets the reflected value of the field being validated.
+
+Then:
 
 ```go
 fl.Field().String()
 ```
 
-returns:
+turns it into a string.
+
+So conceptually:
 
 ```text
-Medium
+form field
+   ↓
+fl.Field()
+   ↓
+.String()
+   ↓
+"Pepperoni"
 ```
 
 ---
 
-## Validation
+# 10. The actual validation
+
+The most important line is:
 
 ```go
 return slices.Contains(
@@ -326,29 +462,32 @@ return slices.Contains(
 )
 ```
 
-If
+Suppose:
 
 ```go
 allowedValues = []string{
-    "Small",
-    "Medium",
-    "Large",
+    "Margherita",
+    "Pepperoni",
+    "Hawaiian",
 }
 ```
 
-and the input is:
+and the user submits:
 
 ```text
-Medium
+Pepperoni
 ```
 
-then
+Then:
 
 ```go
-slices.Contains(...)
+slices.Contains(
+    allowedValues,
+    "Pepperoni",
+)
 ```
 
-returns
+returns:
 
 ```text
 true
@@ -356,13 +495,22 @@ true
 
 Validation succeeds.
 
-If the input is:
+But if they submit:
 
 ```text
-Huge
+Pineapple Supreme
 ```
 
-then
+then:
+
+```go
+slices.Contains(
+    allowedValues,
+    "Pineapple Supreme",
+)
+```
+
+returns:
 
 ```text
 false
@@ -372,88 +520,429 @@ Validation fails.
 
 ---
 
-# Example Usage
+# 11. Connecting this to your `OrderReuqest`
 
-Suppose you have:
+This is where your previous code becomes much clearer.
+
+You had:
 
 ```go
-type OrderItemRequest struct {
-    Pizza string `json:"pizza" binding:"required,valid_pizza_type"`
-    Size  string `json:"size" binding:"required,valid_pizza_size"`
+type OrderReuqest struct {
+    Name         string   `form:"name" binding:"required,min=2,max=100"`
+    Phone        string   `form:"phone" binding:"required,min=10,max=20"`
+    Address      string   `form:"address" binding:"required,min=5,max=200"`
+    Sizes        []string `form:"size" binding:"required,min=1,dive,valid_pizza_size"`
+    PizzaTypes   []string `form:"pizza" binding:"required,min=1,dive,valid_pizza_type"`
+    Instructions []string `form:"instructions" binding:"max=200"`
 }
 ```
 
-Incoming request:
+The interesting fields are:
 
-```json
-{
-    "pizza": "Pepperoni",
-    "size": "Large"
-}
+```go
+Sizes []string `... dive,valid_pizza_size`
 ```
 
-Validation flow:
+and:
 
-```text
-ShouldBindJSON()
-        │
-        ▼
-required?
-        │
-        ▼
-valid_pizza_type?
-        │
-        ▼
-Pepperoni exists?
-        │
-       Yes
-        │
-        ▼
-valid_pizza_size?
-        │
-        ▼
-Large exists?
-        │
-       Yes
-        │
-        ▼
-Request accepted
+```go
+PizzaTypes []string `... dive,valid_pizza_type`
 ```
-
-If the request is:
-
-```json
-{
-    "pizza": "Ice Cream",
-    "size": "Huge"
-}
-```
-
-then:
-
-* `valid_pizza_type` → ❌ fails
-* `valid_pizza_size` → ❌ fails
-
-and Gin returns a validation error.
 
 ---
 
-## Why use `createSliceValidator`?
+# 12. What does `dive` mean?
 
-Without it, you'd write two nearly identical functions:
+This is particularly important.
 
-```go
-func validatePizzaType(...) { ... }
-func validatePizzaSize(...) { ... }
+You have:
+
+```text
+[]string
 ```
 
-Instead, you write one generic function that works for **any slice of allowed strings**. If later you want to validate order statuses, you can reuse it:
+which means a **slice containing multiple strings**.
 
-```go
-v.RegisterValidation(
-    "valid_order_status",
-    createSliceValidator(models.OrderStatuses),
-)
+For example:
+
+```text
+Sizes:
+[
+    "Large",
+    "Medium",
+    "Small"
+]
 ```
 
-This keeps your code shorter, easier to maintain, and reusable.
+The validator needs to validate each element individually.
+
+That's what:
+
+```text
+dive
+```
+
+means.
+
+It tells the validator:
+
+> Go inside this collection and validate each element.
+
+So:
+
+```go
+binding:"required,min=1,dive,valid_pizza_size"
+```
+
+can be understood as:
+
+```text
+required
+   ↓
+slice must exist
+
+min=1
+   ↓
+must contain at least one item
+
+dive
+   ↓
+go through each item
+
+valid_pizza_size
+   ↓
+each item must be an allowed pizza size
+```
+
+---
+
+# 13. Example
+
+Suppose:
+
+```go
+models.PizzaSizes = []string{
+    "Small",
+    "Medium",
+    "Large",
+}
+```
+
+The customer submits:
+
+```text
+size=Large
+size=Medium
+size=Small
+```
+
+Validator sees:
+
+```text
+Sizes
+├── "Large"  → valid_pizza_size → true
+├── "Medium" → valid_pizza_size → true
+└── "Small"  → valid_pizza_size → true
+```
+
+Everything passes.
+
+But:
+
+```text
+size=Large
+size=Huge
+size=Small
+```
+
+becomes:
+
+```text
+Sizes
+├── "Large" → true
+├── "Huge"  → false ❌
+└── "Small" → true
+```
+
+So the entire validation fails.
+
+---
+
+# 14. Pizza types work the same way
+
+Suppose:
+
+```go
+models.PizzaTypes = []string{
+    "Margherita",
+    "Pepperoni",
+    "Hawaiian",
+}
+```
+
+Then:
+
+```text
+pizza=Pepperoni
+pizza=Hawaiian
+```
+
+becomes:
+
+```text
+PizzaTypes
+├── Pepperoni → valid_pizza_type → true
+└── Hawaiian  → valid_pizza_type → true
+```
+
+But:
+
+```text
+pizza=Pepperoni
+pizza=Burger
+```
+
+becomes:
+
+```text
+PizzaTypes
+├── Pepperoni → true
+└── Burger    → false ❌
+```
+
+---
+
+# 15. Why not just trust the HTML form?
+
+You might have something like:
+
+```html
+<select name="size">
+    <option value="Small">Small</option>
+    <option value="Medium">Medium</option>
+    <option value="Large">Large</option>
+</select>
+```
+
+You might think:
+
+> The user can only select those options.
+
+But that's not enough.
+
+A user can manually send an HTTP request with:
+
+```text
+size=Huge
+```
+
+The browser UI isn't a security boundary.
+
+That's why server-side validation is important:
+
+```text
+Browser validation
+       ↓
+nice user experience
+
+Server validation
+       ↓
+actual enforcement
+```
+
+Your custom validators provide that server-side enforcement.
+
+---
+
+# 16. Why the validator uses the same model lists
+
+This is another good design decision.
+
+You aren't hard-coding:
+
+```go
+if value == "Small" ||
+   value == "Medium" ||
+   value == "Large" {
+```
+
+Instead, you use:
+
+```go
+models.PizzaSizes
+```
+
+That means your allowed values have one central source.
+
+For example:
+
+```go
+models.PizzaSizes = []string{
+    "Small",
+    "Medium",
+    "Large",
+    "Extra Large",
+}
+```
+
+The validator automatically accepts the new size.
+
+You don't need to change the validator.
+
+---
+
+# 17. Your complete validation pipeline
+
+Now let's connect this to:
+
+```go
+func (h *Handler) HandleNewOrderPost(c *gin.Context)
+```
+
+You had:
+
+```go
+var form OrderReuqest
+
+if err := c.ShouldBind(&form); err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{
+        "error": err.Error(),
+    })
+    return
+}
+```
+
+Here's what happens:
+
+```text
+POST /new-order
+       │
+       ▼
+ShouldBind(&form)
+       │
+       ├── Read form fields
+       │
+       ├── Put values into OrderReuqest
+       │
+       └── Run validation
+                │
+                ▼
+       ┌─────────────────────┐
+       │ validator           │
+       │                     │
+       │ required            │
+       │ min/max             │
+       │ dive                │
+       │ valid_pizza_size    │
+       │ valid_pizza_type    │
+       └──────────┬──────────┘
+                  │
+             ┌────┴────┐
+             │         │
+          valid      invalid
+             │         │
+             ▼         ▼
+       CreateOrder   HTTP 400
+```
+
+So your `RegisterCustomValidators()` function is effectively extending Gin's built-in validation system.
+
+---
+
+# 18. One thing to notice about your architecture
+
+Your code has a nice separation:
+
+```text
+models
+  │
+  ├── PizzaTypes
+  ├── PizzaSizes
+  └── Order data
+       │
+       ▼
+validation
+       │
+       ▼
+HTTP handler
+       │
+       ▼
+OrderModel
+       │
+       ▼
+database
+```
+
+The model defines what values are allowed.
+
+The validator enforces those values.
+
+The handler decides what to do with valid data.
+
+The database model stores it.
+
+---
+
+# 19. One small naming issue
+
+You called your type:
+
+```go
+type OrderReuqest struct {
+```
+
+There is a typo:
+
+```text
+Reuqest
+```
+
+should normally be:
+
+```go
+type OrderRequest struct {
+```
+
+Then:
+
+```go
+var form OrderRequest
+```
+
+This doesn't break the program because Go doesn't care about the English spelling, but `OrderRequest` is much clearer.
+
+---
+
+# 20. In one sentence
+
+This whole file does one main job:
+
+> **It extends Gin's validator so `OrderRequest` can verify that every submitted pizza type and size actually exists in your application's allowed lists.**
+
+The clever part is this reusable function:
+
+```go
+func createSliceValidator(allowedValues []string) validator.Func {
+    return func(fl validator.FieldLevel) bool {
+        return slices.Contains(
+            allowedValues,
+            fl.Field().String(),
+        )
+    }
+}
+```
+
+You give it a list:
+
+```text
+PizzaTypes → validator
+PizzaSizes → validator
+```
+
+and it creates a validator that checks:
+
+```text
+"Is the submitted value contained in this list?"
+```
+
+That's a clean way to avoid duplicating validation logic.
