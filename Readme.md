@@ -9,3 +9,22 @@ https://gorm.io/
 https://github.com/teris-io/shortid
 
 run :  go mod tidy
+
+if : 
+1. Enable cgo
+
+In PowerShell:
+
+go env -w CGO_ENABLED=1
+
+Check:
+
+go env CGO_ENABLED
+
+Expected:
+
+1
+2. Run your project
+
+go run ./cmd  
+cntr + c 

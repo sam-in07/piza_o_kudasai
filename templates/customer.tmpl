@@ -1,0 +1,20 @@
+{{template "top" .}}
+
+   <title>Order Status</title>
+</head>
+<body>
+   <div class="max-w-md mx-auto text-center">
+      <h1 class="text-2xl font-bold mb-4">
+         Order Placed Successfully!
+      </h1>
+
+
+  <p class="text-lg mb-2">Order ID:</p>
+
+  <p class="text-xl font-bold mb-4">
+     {{.Order.ID}}
+  </p>
+
+
+   </div>
+{{template "bottom" .}}
