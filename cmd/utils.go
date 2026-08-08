@@ -12,15 +12,15 @@ import (
 )
 
 type Config struct {
-	Port   string
-	DBPath string
+	Port             string
+	DBPath           string
 	SessionSecretKey string
 }
 
 func loadConfig() Config {
 	return Config{
-		Port:   getEnv("PORT", "8080"),
-		DBPath: getEnv("DATABASE_URL", "./data/orders.db"),
+		Port:             getEnv("PORT", "8080"),
+		DBPath:           getEnv("DATABASE_URL", "./data/orders.db"),
 		SessionSecretKey: getEnv("SESSION_SECRET_KEY", "pizza-order-secret-key"),
 	}
 }
@@ -69,7 +69,6 @@ func SetSessionValue(c *gin.Context, key string, value interface{}) error {
 	session.Set(key, value)
 	return session.Save()
 }
-
 
 func GetSessionString(c *gin.Context, key string) string {
 	session := sessions.Default(c)

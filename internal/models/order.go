@@ -21,7 +21,7 @@ var (
 		"Supreme",
 		"Truffle Mushroom",
 		"Four Cheese",
-	}
+	} 
 
 	PizzaSizes = []string{
 		"Small", "Medium", "Large", "X-Large",
