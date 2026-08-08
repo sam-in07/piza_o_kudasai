@@ -42,6 +42,7 @@ func (h *Handler) HandleNewOrderPost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	orderItems := make([]models.OrderItem, len(form.Sizes))
 	for i := range orderItems {
 		orderItems[i] = models.OrderItem{
@@ -58,6 +59,7 @@ func (h *Handler) HandleNewOrderPost(c *gin.Context) {
 		Status:       models.OrderStatuses[0],
 		Items:        orderItems,
 	}
+
 	if err := h.orders.CreateOrder(&order); err != nil {
 		slog.Error("Failed to create order", "error", err)
 		c.String(http.StatusInternalServerError, "Something went wrong")
@@ -66,12 +68,10 @@ func (h *Handler) HandleNewOrderPost(c *gin.Context) {
 
 	slog.Info("Order created", "orderId", order.ID, "customer", order.CustomerName)
 
-	
+	h.notificationManager.Notify("admin:new_orders", "new_order")
 
 	c.Redirect(http.StatusSeeOther, "/customer/"+order.ID)
 }
-
-
 
 func (h *Handler) serveCustomer(c *gin.Context) {
 	orderID := c.Param("id")
@@ -85,8 +85,10 @@ func (h *Handler) serveCustomer(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "customer.tmpl", gin.H{
-		"Order" : order , 
+	c.HTML(http.StatusOK, "customer.tmpl", CustomerData{
+		Title:    "Pizza Order Status " + orderID,
+		Order:    *order,
+		Statuses: models.OrderStatuses,
 	})
 
 }

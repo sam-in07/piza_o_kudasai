@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"pizza-tracker-go/internal/models"
 
@@ -40,8 +41,7 @@ func (h *Handler) HandleLoginPost(c *gin.Context) {
 		return
 	}
 
-	//SetSessionValue(c, "userID", fmt.Sprintf("%v", user.ID))
-	SetSessionValue(c, "userID", user.ID)
+	SetSessionValue(c, "userID", fmt.Sprintf("%v", user.ID))
 	SetSessionValue(c, "username", user.Username)
 
 	c.Redirect(http.StatusSeeOther, "/admin")
