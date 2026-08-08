@@ -32,8 +32,9 @@ func main() {
 		slog.Error("Failed to load templates", "error", err)
 		os.Exit(1)
 	}
+	sessionStore := setupSessionStore(dbModel.DB, []byte(cfg.SessionSecretKey))
 
-	setupRoutes(router, h)
+	setupRoutes(router, h, sessionStore)
 
 	slog.Info("Server starting", "url", "http://localhost:"+cfg.Port)
 
@@ -44,4 +45,4 @@ func main() {
 /*
 
 
-*/
+ */
